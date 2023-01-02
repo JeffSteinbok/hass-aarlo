@@ -2,6 +2,7 @@ import threading
 
 from unidecode import unidecode
 
+
 from .constant import (
     BATTERY_KEY,
     BATTERY_TECH_KEY,
@@ -17,25 +18,25 @@ from .constant import (
     XCLOUD_ID_KEY,
 )
 
+from .entity import ArloEntity
 
-class ArloDevice(object):
+
+class ArloDevice(ArloEntity):
     """Base class for all Arlo devices.
 
     Has code to handle providing common attributes and comment event handling.
     """
 
     def __init__(self, name, arlo, attrs):
-        self._name = name
-        self._arlo = arlo
-        self._attrs = attrs
-
-        self._lock = threading.Lock()
-        self._attr_cbs_ = []
-
         # Basic IDs.
         self._device_id = attrs.get("deviceId", None)
         self._device_type = attrs.get("deviceType", "unknown")
         self._unique_id = attrs.get("uniqueId", None)
+
+        super().__init__(name, self._device_id, arlo, attrs)
+
+        # add a listener
+        self._arlo.be.add_device_listener(self, self._event_handler)
 
         # We save this here but only expose it directly in the ArloChild class.
         # Some devices are their own parents and we need to know that at the ArloDevice
@@ -57,57 +58,11 @@ class ArloDevice(object):
             if value is not None:
                 self._save(key, value)
 
-        # add a listener
-        self._arlo.be.add_listener(self, self._event_handler)
-
     def __repr__(self):
         # Representation string of object.
         return "<{0}:{1}:{2}>".format(
             self.__class__.__name__, self._device_type, self._name
         )
-
-    def _to_storage_key(self, attr):
-        # Build a key incorporating the type!
-        if isinstance(attr, list):
-            return [self.__class__.__name__, self._device_id] + attr
-        else:
-            return [self.__class__.__name__, self._device_id, attr]
-
-    def _event_handler(self, resource, event):
-        self._arlo.vdebug("{}: got {} event **".format(self.name, resource))
-
-        # Find properties. Event either contains a item called properties or it
-        # is the whole thing.
-        self.update_resources(event.get("properties", event))
-
-    def _do_callbacks(self, attr, value):
-        cbs = []
-        with self._lock:
-            for watch, cb in self._attr_cbs_:
-                if watch == attr or watch == "*":
-                    cbs.append(cb)
-        for cb in cbs:
-            cb(self, attr, value)
-
-    def _save(self, attr, value):
-        # TODO only care if it changes?
-        self._arlo.st.set(self._to_storage_key(attr), value)
-
-    def _save_and_do_callbacks(self, attr, value):
-        self._save(attr, value)
-        self._do_callbacks(attr, value)
-
-    def _load(self, attr, default=None):
-        return self._arlo.st.get(self._to_storage_key(attr), default)
-
-    def _load_matching(self, attr, default=None):
-        return self._arlo.st.get_matching(self._to_storage_key(attr), default)
-
-    def update_resources(self, props):
-        for key in RESOURCE_KEYS + RESOURCE_UPDATE_KEYS:
-            value = props.get(key, None)
-            if value is not None:
-                self._save_and_do_callbacks(key, value)
 
     @property
     def entity_id(self):
@@ -117,11 +72,6 @@ class ArloDevice(object):
             return self.name.lower().replace(" ", "_")
         else:
             return unidecode(self.name.lower().replace(" ", "_"))
-
-    @property
-    def name(self):
-        """Returns the device name."""
-        return self._name
 
     @property
     def device_id(self):
@@ -205,42 +155,6 @@ class ArloDevice(object):
         Can work from child or parent class.
         """
         return self._parent_id == self._device_id
-
-    def attribute(self, attr, default=None):
-        """Return the value of attribute attr.
-
-        PyArlo stores its state in key/value pairs. This returns the value associated with the key.
-
-        See PyArlo for a non-exhaustive list of attributes.
-
-        :param attr: Attribute to look up.
-        :type attr: str
-        :param default: value to return if not found.
-        :return: The value associated with attribute or `default` if not found.
-        """
-        value = self._load(attr, None)
-        if value is None:
-            value = self._attrs.get(attr, None)
-        if value is None:
-            value = self._attrs.get("properties", {}).get(attr, None)
-        if value is None:
-            value = default
-        return value
-
-    def add_attr_callback(self, attr, cb):
-        """Add an callback to be triggered when an attribute changes.
-
-        Used to register callbacks to track device activity. For example, get a notification whenever
-        motion stop and starts.
-
-        See PyArlo for a non-exhaustive list of attributes.
-
-        :param attr: Attribute - eg `motionStarted` - to monitor.
-        :type attr: str
-        :param cb: Callback to run.
-        """
-        with self._lock:
-            self._attr_cbs_.append((attr, cb))
 
     def has_capability(self, cap):
         """Is the device capable of performing activity cap:.

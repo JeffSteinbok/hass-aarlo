@@ -39,6 +39,7 @@ from .constant import (
 from .sseclient import SSEClient
 from .tfa import Arlo2FAConsole, Arlo2FAImap, Arlo2FARestAPI
 from .util import days_until, now_strftime, time_to_arlotime, to_b64
+from .device import ArloDevice
 
 
 # include token and session details
@@ -1025,7 +1026,7 @@ class ArloBackEnd(object):
     def sub_id(self):
         return self._sub_id
 
-    def add_listener(self, device, callback):
+    def add_device_listener(self, device: ArloDevice, callback):
         with self._lock:
             if device.device_id not in self._callbacks:
                 self._callbacks[device.device_id] = []

@@ -16,21 +16,18 @@ from .constant import (
     MODE_REVISION_KEY
 )
 from .util import time_to_arlotime
+from .entity import ArloEntity
 
 # Represnts a Location object; each Arlo account can have multiple owned locations and
 # multiple shared locations.
 #
 # Should there be a new base class for this as well as ArloDevice?
-class ArloLocation():
+class ArloLocation(ArloEntity):
     def __init__(self, arlo, attrs):
         # add a listener
         self._name = attrs.get("locationId")
-        self._location_id = self._name
-        self._arlo = arlo
-        self._attrs = attrs
-        
-        # BE only knows how to listen for device events.
-        #self._arlo.be.add_listener(self, self._event_handler)
+
+        super().__init__(self._name, self._name, arlo, attrs)
 
         self._lock = threading.Lock()
         self._attr_cbs_ = []
@@ -222,29 +219,6 @@ class ArloLocation():
         return "<{0}:{1}:{2}>".format(
             self.__class__.__name__, self._location_id, self._name
         )
-
-    def _to_storage_key(self, attr):
-        # Build a key incorporating the type!
-        if isinstance(attr, list):
-            return [self.__class__.__name__, self._location_id] + attr
-        else:
-            return [self.__class__.__name__, self._location_id, attr]
-
-    def _event_handler(self, resource, event):
-        self._arlo.vdebug("{}: got {} event **".format(self.name, resource))
-
-        # Find properties. Event either contains a item called properties or it
-        # is the whole thing.
-        self.update_resources(event.get("properties", event))
-
-    def _do_callbacks(self, attr, value):
-        cbs = []
-        with self._lock:
-            for watch, cb in self._attr_cbs_:
-                if watch == attr or watch == "*":
-                    cbs.append(cb)
-        for cb in cbs:
-            cb(self, attr, value)
 
     def _save(self, attr, value):
         # TODO only care if it changes?
